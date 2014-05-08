@@ -5,9 +5,9 @@
   general design
 
   build and run instructions
-    1. atp-get install mono
+    1. apt-get install mono
     2. git clone repo
-    3. mono build ?
+    3. xbuild Fury.sln
     4. sh> mono Fury/bin/Debug/program.exe -server
     5. sh1> monmo Fury/bin/Debug.program.exe -client
 *)
