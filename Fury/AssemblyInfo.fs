@@ -1,4 +1,4 @@
-﻿module Fury.AssemblyInfo
+module Fury.AssemblyInfo
 open System.Reflection
 open System.Runtime.CompilerServices
 
@@ -7,7 +7,7 @@ open System.Runtime.CompilerServices
 [<assembly: AssemblyConfiguration("")>]
 [<assembly: AssemblyCompany("")>]
 [<assembly: AssemblyProduct("")>]
-[<assembly: AssemblyCopyright("John Wostenberg")>]
+[<assembly: AssemblyCopyright(“Alan Wostenberg")>]
 [<assembly: AssemblyTrademark("")>]
 
 // The assembly version has the format {Major}.{Minor}.{Build}.{Revision}
