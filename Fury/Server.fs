@@ -1,25 +1,40 @@
 ﻿module Server
 
-  // for fun I'm trying out message passing style of concurrency, similar to Erlang. No mutable state, so no locks. Just application logic.
-  // messages and agents http://fsharpforfunandprofit.com/posts/concurrency-actor-model/
-  // In Python I'd use the equivalent (research that) or else good old threads and locks for concurrency on mutable client list
+  // Welcome to Fury: a tool to "compare performance of various storage solutions on customer network"
+
+  // This first cut is in idomatic F#. F# is a function-first multiparadigm language resembling Python with type inferencing.
+  //    see http://fsharp.org/ .   Made with Mono on my iMac. For one-click deployment to Linux see readme.txt http://monodevelop.com/
+
+  // Like you, gentle reader, I think in code. Currently I am thinking functionally in F#. 
+  // I intend to translate into Python as part II and will narrate along in coments how that would go
+
 
   open Microsoft.FSharp.Control
   open System
 
-
+  // Since requirements have dimensioned units such as megabytes and times, 
+  // I'll define some units of measure to avoid silly math mistakes.   See http://blogs.msdn.com/b/andrewkennedy/
+  // in Python I'd apply the whole value pattern http://c2.com/ppr/checks.html#1
   [<Measure>] type mb
   [<Measure>] type seconds
 
+  // To model the client heartbeat health I'll encode a state machine in a discriminated union
+  // in Python I'd might use the State pattern http://en.wikipedia.org/wiki/State_pattern
   type ClientState = Green of int<seconds> | Red | Done
 
   type ClientId = int
   type Client = {id:ClientId;state:ClientState}
   type ServerInfo = {totalMb:float<mb>;clientsServed:int}
 
+  // Define the kinds of messages clients send to the server
+  // This is a discriminated union -- a kind of lightweight class definition.
+  // In Python I'd define an abstract Message, with each type below subtype, and methods to serialize/deserialize polymorphically
   type Message = | Start of ClientId | Stop of ClientId | Rollover of ClientId*float<mb> | Heartbeat of ClientId | ServerExit | ServerTick | ServerReport
 
-  //todo:encapsulate in an object
+  // for fun I'm trying out message passing style of concurrency, similar to Erlang. No mutable state, so no locks. Just application logic.
+  // messages and agents http://fsharpforfunandprofit.com/posts/concurrency-actor-model/
+  // In Python I'd use the equivalent, or else good old threads and locks for concurrency on mutable client list
+
   let serverInitialState = {totalMb=0.0<mb>;clientsServed=0}
   let server = MailboxProcessor.Start (fun inbox ->
       let rec loop(clients,(serverInfo:ServerInfo)) =

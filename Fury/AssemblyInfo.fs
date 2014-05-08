@@ -7,7 +7,7 @@ open System.Runtime.CompilerServices
 [<assembly: AssemblyConfiguration("")>]
 [<assembly: AssemblyCompany("")>]
 [<assembly: AssemblyProduct("")>]
-[<assembly: AssemblyCopyright(“Alan Wostenberg")>]
+[<assembly: AssemblyCopyright("Alan Wostenberg")>]
 [<assembly: AssemblyTrademark("")>]
 
 // The assembly version has the format {Major}.{Minor}.{Build}.{Revision}

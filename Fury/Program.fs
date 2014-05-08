@@ -5,11 +5,13 @@
   general design
 
   build and run instructions
-    1. apt-get install mono
-    2. git clone repo
-    3. xbuild Fury.sln
-    4. sh> mono Fury/bin/Debug/program.exe -server
-    5. sh1> monmo Fury/bin/Debug.program.exe -client
+    1. apt-get install mono-complete
+    2. install fsharp: from Ubuntu software center GUI
+    3. git clone repo
+    4. xbuild Fury.sln
+    5. sh> mono Fury/bin/Debug/program.exe -server
+    6. in another terminal window sh1> mono Fury/bin/Debug.program.exe -client 1 10 60
+    7. Repeat 6 for as many clients as desired.
 *)
 
 module notes =
@@ -38,8 +40,8 @@ open Server
 let main argv = 
     printfn "%A" argv
     printfn "%A: Fury on: %A"  (System.DateTime.Now) argv
-    printfn "usage: fury  -client  [-to localhost:8090]  -name alecto -duration 30.minutes -chunk 10.mb  -filesys tmp/ -rollover 100.mb"
-    printfn "true usage:  fury <clientId> <chunkMb> <durationSeconds>"
+    //printfn "usage: fury  -client  [-to localhost:8090]  -name alecto -duration 30.minutes -chunk 10.mb  -filesys tmp/ -rollover 100.mb"
+    printfn "usage:  fury <clientId> <chunkMb> <durationSeconds>"
     let port = 8091
     let forSeconds = 600.0
     let ep = System.Net.IPEndPoint(System.Net.IPAddress.Parse "127.0.0.1",port)
@@ -58,8 +60,7 @@ let main argv =
       let testMessages = [Start clientId;ServerReport;Rollover (clientId,chunkSize);Stop clientId]
       postSlowly (Start clientId)
 
-      // inner loop -- rethink as loop not sequence
-
+      // client data generator -- rethink as loop not sequence
       let endTimes = System.DateTime.Now + (System.TimeSpan.FromSeconds (float durationSeconds))
       let timeRemaining msg = System.DateTime.Now < endTimes
       [1..durationSeconds] |> List.map (fun i -> Rollover (clientId,chunkSize)) |> List.iter postSlowly
