@@ -9,8 +9,8 @@
     2. install fsharp: from Ubuntu software center GUI
     3. git clone repo
     4. xbuild Fury.sln
-    5. sh> mono Fury/bin/Debug/program.exe -server
-    6. in another terminal window sh1> mono Fury/bin/Debug.program.exe -client 1 10 60
+    5. sh> mono Fury/bin/Debug/program.exe
+    6. in another terminal window sh1> mono Fury/bin/Debug.program.exe 1 10 60
     7. Repeat 6 for as many clients as desired.
 *)
 
@@ -32,45 +32,49 @@ module notes =
     let a=42
 
 
-// start the exectuable in "server" or "client" mode, depending on command line
 
 
 open Server
+module CommandLine = 
+    type ServerConfig = {port:int}
+    type ClientConfig = {port:int;clientId:int;chunkSize:float<mb>;duration:int<minutes>;host:string}
+    type Config = Master of ServerConfig | Slave of ClientConfig
+    let parse (argv:string[]) =
+      //parse command line args in order: <clientId> <chunkMb> <durationMinutes>.  No errors
+      if argv.Length = 0 
+        then Master {port=8091} 
+        else 
+          let mb i = (float i) * 1.0<mb>
+          let minutes i = i * 1<minutes>
+          Slave {port=8091;clientId=System.Int32.Parse argv.[0];chunkSize=System.Int32.Parse argv.[1] |> mb;duration=System.Int32.Parse argv.[2] |> minutes;host="127.0.0.1"}
+// start the exectuable in "server" or "client" mode, depending on command line
 [<EntryPoint>]
 let main argv = 
     printfn "%A" argv
     printfn "%A: Fury on: %A"  (System.DateTime.Now) argv
     //printfn "usage: fury  -client  [-to localhost:8090]  -name alecto -duration 30.minutes -chunk 10.mb  -filesys tmp/ -rollover 100.mb"
-    printfn "usage:  fury <clientId> <chunkMb> <durationSeconds>"
+    printfn "usage:  fury [<clientId> <chunkMb> <durationMinutes>]\n\twith no arguments, starts the server; \n\twith the listed arguments, starts client"
     let port = 8091
     let forSeconds = 600.0
     let ep = System.Net.IPEndPoint(System.Net.IPAddress.Parse "127.0.0.1",port)
-    if argv.Length > 0 then
-      let mb i = (float i) * 1.0<mb>
-          // command line parsing, no error checks
-      let clientId = System.Int32.Parse argv.[0]
-      let chunkSize = System.Int32.Parse argv.[1] |> mb
-      let durationSeconds = System.Int32.Parse argv.[2]
-      printfn "client %d to port %d chunk %A<mb> duration %d<seconds>" clientId port chunkSize durationSeconds
-      let client = Actor.TcpActorClient<Server.Message>(ep)
-      let postSlowly msg =
-          client.Post msg
-          printf "."
-          System.Threading.Thread.Sleep (System.TimeSpan.FromSeconds 1.0)
-      let testMessages = [Start clientId;ServerReport;Rollover (clientId,chunkSize);Stop clientId]
-      postSlowly (Start clientId)
-
-      // client data generator -- rethink as loop not sequence
-      let endTimes = System.DateTime.Now + (System.TimeSpan.FromSeconds (float durationSeconds))
-      let timeRemaining msg = System.DateTime.Now < endTimes
-      [1..durationSeconds] |> List.map (fun i -> Rollover (clientId,chunkSize)) |> List.iter postSlowly
-      postSlowly (Stop clientId)
-    else
-      printfn "server at %d for %f seconds" port forSeconds
-      let server = new Actor.TcpActor<Server.Message>(Server.server,ep)
-      let duration = System.TimeSpan.FromSeconds forSeconds
-      printfn "it runs!...for %A" duration
-      System.Threading.Thread.Sleep duration
-      printfn "stop server"   // no, should wait on the exit
-      server.Stop()
+    match CommandLine.parse argv with
+      | CommandLine.Master config -> 
+          let forTime = System.TimeSpan.FromSeconds 600.0
+          printfn "server at port %d for %A" config.port forTime
+          let server = new Actor.TcpActor<Server.Message>(Server.server,ep)
+          System.Threading.Thread.Sleep forTime   // todo: await server signal
+          server.Stop()
+      | CommandLine.Slave config -> 
+          printfn "client to server on port %d chunk %s duration %d<minutes>" config.port (prettyPrint config.chunkSize) (config.duration/1<minutes>)
+          let client = Actor.TcpActorClient<Server.Message>(ep)
+          let postSlowly msg =
+            client.Post msg
+            printf "."
+            System.Threading.Thread.Sleep (System.TimeSpan.FromSeconds 1.0)
+          postSlowly (Start config.clientId)
+          let endTimes = System.DateTime.Now + (System.TimeSpan.FromMinutes(float config.duration))
+          while System.DateTime.Now < endTimes do
+            Rollover (config.clientId,config.chunkSize) |> postSlowly
+          postSlowly (Stop config.clientId)
+          ()
     0 // return an integer exit code

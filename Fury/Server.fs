@@ -13,10 +13,15 @@
   open System
 
   // Since requirements have dimensioned units such as megabytes and times, 
-  // I'll define some units of measure to avoid silly math mistakes.   See http://blogs.msdn.com/b/andrewkennedy/
+  // I'll define some units of measure to avoid silly math mistakes 
+  // like the one that crashed the mars probe http://www.wired.com/2010/11/1110mars-climate-observer-report/
+  //   See http://blogs.msdn.com/b/andrewkennedy/
   // in Python I'd apply the whole value pattern http://c2.com/ppr/checks.html#1
   [<Measure>] type mb
   [<Measure>] type seconds
+  [<Measure>] type minutes
+  let secondsPerMinute = 60<seconds>/1<minutes> //todo: as member on seconds
+  let prettyPrint mb = sprintf "%d<mb>" (int(mb/1.0<mb>))
 
   // To model the client heartbeat health I'll encode a state machine in a discriminated union
   // in Python I'd might use the State pattern http://en.wikipedia.org/wiki/State_pattern
@@ -38,11 +43,13 @@
   let serverInitialState = {totalMb=0.0<mb>;clientsServed=0}
   let server = MailboxProcessor.Start (fun inbox ->
       let rec loop(clients,(serverInfo:ServerInfo)) =
+
         let rm clientId list = list |> List.filter (fun c -> c.id <> clientId)
         let add client list = client::list      // second thoughts: dictionary
         let replace client list = rm client.id list |> add client
-        let isWorking client = match client.state with | Green n -> true | _ -> false
-        let working list = list |> List.filter isWorking |> List.length
+        let isActive client = match client.state with | Green n -> true | _ -> false
+        let active list = list |> List.filter isActive |> List.length
+
         async { let! envelope = inbox.Receive()
                 let body = envelope
                 match body with 
@@ -53,20 +60,22 @@
                       return! loop(newClients,newServerInfo)
                   | Stop client ->
                       printfn "Stop client %d" client
+                      inbox.Post(ServerReport)    // interim report
+                      inbox.Post(ServerTick)
                       return! loop(rm client clients,serverInfo)
-                  | Rollover (client,m) -> 
-                    printfn "Rollover %d %A<mb>, waiting..." client serverInfo
-                    return! loop(clients,{serverInfo with totalMb=serverInfo.totalMb+m})
+                  | Rollover (client,mb) -> 
+                    printfn "Rollover %d %s" client (prettyPrint mb)
+                    return! loop(clients,{serverInfo with totalMb=serverInfo.totalMb+mb})
                   | Heartbeat client ->
                     printfn "Heartbeat %d" client
                     return! loop(clients,serverInfo)
                   | ServerReport ->
                     clients |> List.iter (fun c -> printfn "%A" c)
-                    printfn "total clients %A" serverInfo
+                    printfn "total clients served=%d active clients=%d total megabytes " serverInfo.clientsServed (active clients)
                     return! loop(clients,serverInfo)
                   | ServerTick ->
                     // when all clients finished report general stats and finish
-                    if serverInfo.clientsServed > 0 && working clients = 0 then 
+                    if serverInfo.clientsServed > 0 && active clients = 0 then 
                       inbox.Post(ServerReport)
                       inbox.Post(ServerExit)
                     return! loop(clients,serverInfo)
