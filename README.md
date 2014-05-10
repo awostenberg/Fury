@@ -9,7 +9,7 @@ One ore more clients stress the local system under test and post results to a re
 
 ###Design
 First implemented in [F#](http://fsharp.org/) 
-using Erlang-style [actor-based concurrency](http://fsharpforfunandprofit.com/posts/concurrency-actor-model/"Introduction") 
+using Erlang-style [actor-based concurrency](http://fsharpforfunandprofit.com/posts/concurrency-actor-model) 
 with a translation to Python, planned.
 
 ###Implementation
@@ -18,7 +18,7 @@ New to F#? It reads like Python or Ruby with type inference. For example, here i
     let square n = n*n
     List.map square [1..10]
    
-You can run the above in F# now from your browser in [http://tryfs.net/](http://tryfs.net/"try it!")
+You can run the above in F# now from your browser in [http://tryfs.net/](http://tryfs.net/)
 
 The "Syntax in sixty seconds" essay [here](http://fsharpforfunandprofit.com/posts/fsharp-in-60-seconds/)
 will get you fluent enough to read along the code. I recommend:
