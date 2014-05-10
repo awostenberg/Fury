@@ -35,6 +35,7 @@ module notes =
 
 
 open Server
+
 module CommandLine = 
     type ServerConfig = {port:int}
     type ClientConfig = {port:int;clientId:int;chunkSize:float<mb>;duration:int<minutes>;host:string}
@@ -50,7 +51,6 @@ module CommandLine =
 // start the exectuable in "server" or "client" mode, depending on command line
 [<EntryPoint>]
 let main argv = 
-    printfn "%A" argv
     printfn "%A: Fury on: %A"  (System.DateTime.Now) argv
     //printfn "usage: fury  -client  [-to localhost:8090]  -name alecto -duration 30.minutes -chunk 10.mb  -filesys tmp/ -rollover 100.mb"
     printfn "usage:  fury [<clientId> <chunkMb> <durationMinutes>]\n\twith no arguments, starts the server; \n\twith the listed arguments, starts client"
@@ -59,10 +59,11 @@ let main argv =
     let ep = System.Net.IPEndPoint(System.Net.IPAddress.Parse "127.0.0.1",port)
     match CommandLine.parse argv with
       | CommandLine.Master config -> 
-          let forTime = System.TimeSpan.FromSeconds 600.0
-          printfn "server at port %d for %A" config.port forTime
-          let server = new Actor.TcpActor<Server.Message>(Server.server,ep)
-          System.Threading.Thread.Sleep forTime   // todo: await server signal
+          printfn "server at port %d" config.port
+          let sa = new Server.ServerAgent()
+          let server = new Actor.TcpActor<Server.Message>(sa.Mailbox(),ep)
+          //System.Threading.Thread.Sleep forTime   // todo: await server signal
+          sa.WaitAllDone() |> ignore
           server.Stop()
       | CommandLine.Slave config -> 
           printfn "client to server on port %d chunk %s duration %d<minutes>" config.port (prettyPrint config.chunkSize) (config.duration/1<minutes>)

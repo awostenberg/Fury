@@ -42,49 +42,55 @@
 
   let serverInitialState = {totalMb=0.0<mb>;clientsServed=0}
 
-  let server = MailboxProcessor.Start (fun inbox ->
-      let rec loop(clients,(serverInfo:ServerInfo)) =
+  type ServerAgent() =
+    let allDone = new System.Threading.Semaphore(maximumCount=1,initialCount=0) // signals done to the one who launched agent
+    let server = MailboxProcessor.Start (fun inbox ->
+        let rec loop(clients,(serverInfo:ServerInfo)) =
 
-        let rm clientId list = list |> List.filter (fun c -> c.id <> clientId)
-        let add client list = client::list      // second thoughts: dictionary
-        let replace client list = rm client.id list |> add client
-        let isActive client = match client.state with | Green n -> true | _ -> false
-        let active list = list |> List.filter isActive |> List.length
+          let rm clientId list = list |> List.filter (fun c -> c.id <> clientId)
+          let add client list = client::list      // second thoughts: dictionary
+          let replace client list = rm client.id list |> add client
+          let isActive client = match client.state with | Green n -> true | _ -> false
+          let active list = list |> List.filter isActive |> List.length
 
-        async { let! envelope = inbox.Receive()
-                let body = envelope
-                match body with 
-                  | Start client ->
-                      printfn "Start client %d" client
-                      let newClients = add {id=client;state=Green 10<seconds>} clients
-                      let newServerInfo = {serverInfo with clientsServed=serverInfo.clientsServed+1}
-                      return! loop(newClients,newServerInfo)
-                  | Stop client ->
-                      printfn "Stop client %d" client
-                      inbox.Post(ServerReport)    // interim report
-                      inbox.Post(ServerTick)
-                      return! loop(rm client clients,serverInfo)
-                  | Rollover (client,mb) -> 
-                    printfn "Rollover %d %s" client (prettyPrint mb)
-                    return! loop(clients,{serverInfo with totalMb=serverInfo.totalMb+mb})
-                  | Heartbeat client ->
-                    printfn "Heartbeat %d" client
-                    return! loop(clients,serverInfo)
-                  | ServerReport ->
-                    clients |> List.iter (fun c -> printfn "%A" c)
-                    printfn "total clients served=%d active clients=%d total written=%s " serverInfo.clientsServed (active clients) (prettyPrint serverInfo.totalMb)
-                    return! loop(clients,serverInfo)
-                  | ServerTick ->
-                    // when all clients finished report general stats and finish
-                    if serverInfo.clientsServed > 0 && active clients = 0 then 
-                      inbox.Post(ServerReport)
-                      inbox.Post(ServerExit)
-                    return! loop(clients,serverInfo)
-                  | ServerExit -> 
-                    printfn "server exit"
-                    return() 
-                    }
-      loop ([],{totalMb=0.0<mb>;clientsServed=0}) )
+          async { let! envelope = inbox.Receive()
+                  let body = envelope
+                  match body with 
+                    | Start client ->
+                        printfn "Start client %d" client
+                        let newClients = add {id=client;state=Green 10<seconds>} clients
+                        let newServerInfo = {serverInfo with clientsServed=serverInfo.clientsServed+1}
+                        return! loop(newClients,newServerInfo)
+                    | Stop client ->
+                        printfn "Stop client %d" client
+                        inbox.Post(ServerReport)    // interim report
+                        inbox.Post(ServerTick)
+                        return! loop(rm client clients,serverInfo)
+                    | Rollover (client,mb) -> 
+                      printfn "Rollover %d %s" client (prettyPrint mb)
+                      return! loop(clients,{serverInfo with totalMb=serverInfo.totalMb+mb})
+                    | Heartbeat client ->
+                      printfn "Heartbeat %d" client
+                      return! loop(clients,serverInfo)
+                    | ServerReport ->
+                      clients |> List.iter (fun c -> printfn "%A" c)
+                      printfn "total clients served=%d active clients=%d total written=%s " serverInfo.clientsServed (active clients) (prettyPrint serverInfo.totalMb)
+                      return! loop(clients,serverInfo)
+                    | ServerTick ->
+                      // when all clients finished report general stats and finish
+                      if serverInfo.clientsServed > 0 && active clients = 0 then 
+                        inbox.Post(ServerReport)
+                        inbox.Post(ServerExit)
+                      return! loop(clients,serverInfo)
+                    | ServerExit -> 
+                      printfn "server exit"
+                      allDone.Release() |> ignore
+                      return() 
+                      }
+        loop ([],{totalMb=0.0<mb>;clientsServed=0}) )
+    member self.Post msg = server.Post msg
+    member self.WaitAllDone() = allDone.WaitOne()
+    member self.Mailbox() = server
 
   // finite state machine in the server modeling state of client based on client heartbeats
   // in Python I'd use the State pattern (http://en.wikipedia.org/wiki/State_pattern) unless there is an idiomatic way
