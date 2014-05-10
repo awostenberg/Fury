@@ -13,15 +13,10 @@ using Erlang-style [actor-based concurrency](http://fsharpforfunandprofit.com/po
 with a translation to Python, planned.
 
 ###Implementation
-New to F#? It reads like Python or Ruby with type inference. For example, here is a snippet printing the squares of the first 10 numbers:
+New to F#? It reads like Python or Ruby with type inference. You can try F# "hello world" now from your browser in [http://tryfs.net/](http://tryfs.net/)
 
-    let square n = n*n
-    List.map square [1..10]
-   
-You can run the above in F# now from your browser in [http://tryfs.net/](http://tryfs.net/)
-
-The "Syntax in sixty seconds" essay [here](http://fsharpforfunandprofit.com/posts/fsharp-in-60-seconds/)
-will get you fluent enough to read along the code. I recommend:
+The "Syntax in sixty seconds" essay [here](http://fsharpforfunandprofit.com/posts/fsharp-in-60-seconds/) will get you fluent enough to read along the code.
+I recommend this tour:
 
 - First,  the core messaging loop in Server.fs 
 - Second, the main program and command line parsing in Program.fs
@@ -30,14 +25,18 @@ will get you fluent enough to read along the code. I recommend:
 
 ###How to build and run
 
+####Install Runtime
 This runs on Mac, Linux and Windows. Tested on Mac and Ubuntu. 
-On Linux you'll need to apt-get install [Mono](http://www.mono-project.com/Main_Page) -- 
-the .NET runtime, as described next:
+
+On Mac and Linux you'll need [Mono](http://www.mono-project.com/Main_Page) -- 
+the .NET runtime required by F#. For Linux use 
+apt-get install as described  [here](http://fsharp.org/use/linux/)
+
+Note: for Ubuntu, not having access to [trust/universe](http://packages.ubuntu.com/trusty/fsharp)
+I used the Ubuntu software center GUI installer on the two packages mono-complete and fsharp .
 
 
 ####Build
-0. apt-get install mono-complete
-0. From the Ubuntu software center GUI install "fsharp" -  [trusty/universe](http://fsharp.org/use/linux/)
 0. git clone this repo and cd into Fury/
 0. xbuild Fury.sln
 
