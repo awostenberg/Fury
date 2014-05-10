@@ -41,6 +41,7 @@
   // In Python I'd use the equivalent, or else good old threads and locks for concurrency on mutable client list
 
   let serverInitialState = {totalMb=0.0<mb>;clientsServed=0}
+
   let server = MailboxProcessor.Start (fun inbox ->
       let rec loop(clients,(serverInfo:ServerInfo)) =
 
@@ -71,7 +72,7 @@
                     return! loop(clients,serverInfo)
                   | ServerReport ->
                     clients |> List.iter (fun c -> printfn "%A" c)
-                    printfn "total clients served=%d active clients=%d total megabytes " serverInfo.clientsServed (active clients)
+                    printfn "total clients served=%d active clients=%d total written=%s " serverInfo.clientsServed (active clients) (prettyPrint serverInfo.totalMb)
                     return! loop(clients,serverInfo)
                   | ServerTick ->
                     // when all clients finished report general stats and finish
