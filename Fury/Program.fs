@@ -34,8 +34,12 @@ module notes =
 open Server
 
 module CommandLine = 
-    type ServerConfig = {port:int}
-    type ClientConfig = {port:int;clientId:ClientId;chunkSize:float<mb>;duration:int<minutes>;host:string}
+    type ServerConfig = 
+      {ipAddress:string;port:int}
+      member self.endPoint() = System.Net.IPEndPoint(System.Net.IPAddress.Parse self.ipAddress,self.port)
+    type ClientConfig = 
+      {ipAddress:string;port:int;clientId:ClientId;chunkSize:float<mb>;duration:int<minutes>;host:string}
+      member self.endPoint() = System.Net.IPEndPoint(System.Net.IPAddress.Parse self.ipAddress,self.port)
     type Config = Master of ServerConfig | Slave of ClientConfig
     let usage = """ 
 usage:   Fury [<clientId> <chunkMb> <durationMinutes>]
@@ -45,11 +49,11 @@ usage:   Fury [<clientId> <chunkMb> <durationMinutes>]
     let parse (argv:string[]) =
       //parse command line args in order: <clientId> <chunkMb> <durationMinutes>.  No errors
       if argv.Length = 0 
-        then Master {port=8091} 
+        then Master {ipAddress="127.0.0.1";port=8091} 
         else 
           let mb i = (float i) * 1.0<mb>
           let minutes i = i * 1<minutes>
-          Slave {port=8091;clientId=argv.[0];chunkSize=System.Int32.Parse argv.[1] |> mb;duration=System.Int32.Parse argv.[2] |> minutes;host="127.0.0.1"}
+          Slave {ipAddress="127.0.0.1";port=8091;clientId=argv.[0];chunkSize=System.Int32.Parse argv.[1] |> mb;duration=System.Int32.Parse argv.[2] |> minutes;host="127.0.0.1"}
 
 // start the exectuable in "server" or "client" mode, depending on command line
 [<EntryPoint>]
@@ -57,24 +61,20 @@ let main argv =
     printfn "%A: Fury on: %A"  (System.DateTime.Now) argv
     printfn "%s" CommandLine.usage
     //printfn "usage: fury  -client  [-to localhost:8090]  -name alecto -duration 30.minutes -chunk 10.mb  -filesys tmp/ -rollover 100.mb"
-    let port = 8091
-    let forSeconds = 600.0
-    let ep = System.Net.IPEndPoint(System.Net.IPAddress.Parse "127.0.0.1",port)
     match CommandLine.parse argv with
       | CommandLine.Master config -> 
           printfn "server at port %d" config.port
-          let sa = new Server.ServerAgent()
-          let server = new Actor.TcpActor<Server.Message>(sa.Mailbox(),ep)
-          //System.Threading.Thread.Sleep forTime   // todo: await server signal
-          sa.WaitAllDone() |> ignore
+          let serverAgent = new Server.ServerAgent(1<seconds>)
+          let server = new Actor.TcpActor<Server.Message>(serverAgent.Mailbox(),config.endPoint())
+          serverAgent.WaitAllDone()
           server.Stop()
       | CommandLine.Slave config -> 
           printfn "client %s to server on port %d chunk %s duration %d<minutes>" config.clientId config.port (prettyPrint config.chunkSize) (config.duration/1<minutes>)
-          let client = Actor.TcpActorClient<Server.Message>(ep)
+          let client = Actor.TcpActorClient<Server.Message>(config.endPoint())
           let postSlowly msg =
             client.Post msg
             printf "."
-            System.Threading.Thread.Sleep (System.TimeSpan.FromSeconds 1.0)
+            System.Threading.Thread.Sleep (System.TimeSpan.FromSeconds (config.chunkSize/10.0<mb>)) //delay proportional to chunk size
           postSlowly (Start config.clientId)
 
           let endTimes = System.DateTime.Now.AddMinutes (float config.duration)
