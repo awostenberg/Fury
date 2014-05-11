@@ -27,14 +27,14 @@
   // in Python I'd might use the State pattern http://en.wikipedia.org/wiki/State_pattern
   type ClientState = Green of int<seconds> | Red | Done
 
-  type ClientId = int
-  type Client = {id:ClientId;state:ClientState}
+  type ClientId = string
+  type Client = {id:ClientId;state:ClientState;nRollovers:int}
   type ServerInfo = {totalMb:float<mb>;clientsServed:int}
 
   // Define the kinds of messages clients send to the server
   // This is a discriminated union -- a kind of lightweight class definition.
   // In Python I'd define an abstract Message, with each type below subtype, and methods to serialize/deserialize polymorphically
-  type Message = | Start of ClientId | Stop of ClientId | Rollover of ClientId*float<mb> | Heartbeat of ClientId | ServerExit | ServerTick | ServerReport
+  type Message = | Start of ClientId | Stop of ClientId | Rollover of ClientId*float<mb>*int | Heartbeat of ClientId | ServerExit | ServerTick | ServerReport
 
   // for fun I'm trying out message passing style of concurrency, similar to Erlang. No mutable state, so no locks. Just application logic.
   // messages and agents http://fsharpforfunandprofit.com/posts/concurrency-actor-model/
@@ -57,24 +57,24 @@
                   let body = envelope
                   match body with 
                     | Start client ->
-                        printfn "Start client %d" client
-                        let newClients = add {id=client;state=Green 10<seconds>} clients
+                        printfn "%s: Start" client
+                        let newClients = add {id=client;state=Green 10<seconds>;nRollovers=0} clients
                         let newServerInfo = {serverInfo with clientsServed=serverInfo.clientsServed+1}
                         return! loop(newClients,newServerInfo)
                     | Stop client ->
-                        printfn "Stop client %d" client
+                        printfn "%s: Stop" client
                         inbox.Post(ServerReport)    // interim report
                         inbox.Post(ServerTick)
                         return! loop(rm client clients,serverInfo)
-                    | Rollover (client,mb) -> 
-                      printfn "Rollover %d %s" client (prettyPrint mb)
+                    | Rollover (client,mb,rolloverCount) -> 
+                      printfn "%s: Rollover %s %d" client (prettyPrint mb) rolloverCount
                       return! loop(clients,{serverInfo with totalMb=serverInfo.totalMb+mb})
                     | Heartbeat client ->
-                      printfn "Heartbeat %d" client
+                      printfn "%s: Heartbeat" client
                       return! loop(clients,serverInfo)
                     | ServerReport ->
-                      clients |> List.iter (fun c -> printfn "%A" c)
-                      printfn "total clients served=%d active clients=%d total written=%s " serverInfo.clientsServed (active clients) (prettyPrint serverInfo.totalMb)
+                      printfn "Master: Total clients served=%d active clients=%d total written=%s " serverInfo.clientsServed (active clients) (prettyPrint serverInfo.totalMb)
+                      clients |> List.iter (fun c -> printfn "\t%s\t%A" c.id c.state)
                       return! loop(clients,serverInfo)
                     | ServerTick ->
                       // when all clients finished report general stats and finish
@@ -83,7 +83,7 @@
                         inbox.Post(ServerExit)
                       return! loop(clients,serverInfo)
                     | ServerExit -> 
-                      printfn "server exit"
+                      printfn "Master: Server exit"
                       allDone.Release() |> ignore
                       return() 
                       }

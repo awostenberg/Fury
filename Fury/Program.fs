@@ -31,15 +31,17 @@ module notes =
     *)
     let a=42
 
-
-
-
 open Server
 
 module CommandLine = 
     type ServerConfig = {port:int}
-    type ClientConfig = {port:int;clientId:int;chunkSize:float<mb>;duration:int<minutes>;host:string}
+    type ClientConfig = {port:int;clientId:ClientId;chunkSize:float<mb>;duration:int<minutes>;host:string}
     type Config = Master of ServerConfig | Slave of ClientConfig
+    let usage = """ 
+usage:   Fury [<clientId> <chunkMb> <durationMinutes>]
+         with no arguments, starts the server;
+         with the 3 listed arguments, starts a client"""
+
     let parse (argv:string[]) =
       //parse command line args in order: <clientId> <chunkMb> <durationMinutes>.  No errors
       if argv.Length = 0 
@@ -47,13 +49,14 @@ module CommandLine =
         else 
           let mb i = (float i) * 1.0<mb>
           let minutes i = i * 1<minutes>
-          Slave {port=8091;clientId=System.Int32.Parse argv.[0];chunkSize=System.Int32.Parse argv.[1] |> mb;duration=System.Int32.Parse argv.[2] |> minutes;host="127.0.0.1"}
+          Slave {port=8091;clientId=argv.[0];chunkSize=System.Int32.Parse argv.[1] |> mb;duration=System.Int32.Parse argv.[2] |> minutes;host="127.0.0.1"}
+
 // start the exectuable in "server" or "client" mode, depending on command line
 [<EntryPoint>]
 let main argv = 
     printfn "%A: Fury on: %A"  (System.DateTime.Now) argv
+    printfn "%s" CommandLine.usage
     //printfn "usage: fury  -client  [-to localhost:8090]  -name alecto -duration 30.minutes -chunk 10.mb  -filesys tmp/ -rollover 100.mb"
-    printfn "usage:  fury [<clientId> <chunkMb> <durationMinutes>]\n\twith no arguments, starts the server; \n\twith the listed arguments, starts client"
     let port = 8091
     let forSeconds = 600.0
     let ep = System.Net.IPEndPoint(System.Net.IPAddress.Parse "127.0.0.1",port)
@@ -66,16 +69,20 @@ let main argv =
           sa.WaitAllDone() |> ignore
           server.Stop()
       | CommandLine.Slave config -> 
-          printfn "client to server on port %d chunk %s duration %d<minutes>" config.port (prettyPrint config.chunkSize) (config.duration/1<minutes>)
+          printfn "client %s to server on port %d chunk %s duration %d<minutes>" config.clientId config.port (prettyPrint config.chunkSize) (config.duration/1<minutes>)
           let client = Actor.TcpActorClient<Server.Message>(ep)
           let postSlowly msg =
             client.Post msg
             printf "."
             System.Threading.Thread.Sleep (System.TimeSpan.FromSeconds 1.0)
           postSlowly (Start config.clientId)
-          let endTimes = System.DateTime.Now + (System.TimeSpan.FromMinutes(float config.duration))
-          while System.DateTime.Now < endTimes do
-            Rollover (config.clientId,config.chunkSize) |> postSlowly
+
+          let endTimes = System.DateTime.Now.AddMinutes (float config.duration)
+          let mockWriter rc = Rollover (config.clientId,config.chunkSize,rc) |> postSlowly
+          Seq.initInfinite id 
+            |> Seq.takeWhile (fun _ -> System.DateTime.Now < endTimes) 
+            |> Seq.iter mockWriter
+
           postSlowly (Stop config.clientId)
           ()
     0 // return an integer exit code
