@@ -71,18 +71,32 @@ let main argv =
       | CommandLine.Slave config -> 
           printfn "client %s to server on port %d chunk %s duration %d<minutes>" config.clientId config.port (prettyPrint config.chunkSize) (config.duration/1<minutes>)
           let client = Actor.TcpActorClient<Server.Message>(config.endPoint())
+          client.Post (Start config.clientId)
+
+          // heartbeat to tell server I am alive, even if slow
+          let heartbeatFrequency = 5<seconds>
+          let beatingHeart = new System.ComponentModel.BackgroundWorker()
+          beatingHeart.DoWork.Add(fun args -> 
+            while beatingHeart.CancellationPending |> not do
+              System.Threading.Thread.Sleep (System.TimeSpan.FromSeconds (float(heartbeatFrequency/1<seconds>)))
+              client.Post(Heartbeat config.clientId))
+          beatingHeart.RunWorkerAsync()
+
+
           let postSlowly msg =
+            System.Threading.Thread.Sleep (System.TimeSpan.FromSeconds (config.chunkSize/10.0<mb>)) //delay proportional to chunk size
             client.Post msg
             printf "."
-            System.Threading.Thread.Sleep (System.TimeSpan.FromSeconds (config.chunkSize/10.0<mb>)) //delay proportional to chunk size
-          postSlowly (Start config.clientId)
 
+          // generate and write chunks for the configured duration of the run
           let endTimes = System.DateTime.Now.AddMinutes (float config.duration)
           let mockWriter rc = Rollover (config.clientId,config.chunkSize,rc) |> postSlowly
           Seq.initInfinite id 
             |> Seq.takeWhile (fun _ -> System.DateTime.Now < endTimes) 
             |> Seq.iter mockWriter
 
-          postSlowly (Stop config.clientId)
+          // advise server I am done
+          client.Post (Stop config.clientId)
+          beatingHeart.CancelAsync()
           ()
     0 // return an integer exit code

@@ -35,10 +35,10 @@
         Green 10<seconds>
 
     // client tick tock event
-    let tick s decrement =
+    let tick s decrement greenToRedAction =
         match s with
           | Green countdown when countdown > 0<seconds> -> Green (countdown - decrement) // can dwell for this long before presumed dead
-          | Green countdown -> Red
+          | Green countdown -> greenToRedAction();Red
           | Red -> Red
           | Done -> Done
 
@@ -48,7 +48,7 @@
   type Client = 
     {id:ClientId;mutable state:ClientFsm.ClientHealth}
     member self.heartbeat() = self.state <- ClientFsm.heartbeat() 
-    member self.tick(decrement) = self.state <- ClientFsm.tick self.state decrement 
+    member self.tick(decrement,greenToRedAction) = self.state <- ClientFsm.tick self.state decrement greenToRedAction
 
 
   // summary statistics of the server
@@ -72,12 +72,10 @@
         let rec loop(clients,(serverInfo:ServerInfo)) =
           let rm clientId list = list |> List.filter (fun c -> c.id <> clientId)
           let add client list = client::list      // second thoughts: dictionary
-          //let replace client list = rm client.id list |> add client
           let isActive client = match client.state with | ClientFsm.Green n -> true | _ -> false
           let active list = list |> List.filter isActive |> List.length
-          async { let! envelope = inbox.Receive()
-                  let body = envelope
-                  match body with 
+          async { let! msg = inbox.Receive()
+                  match msg with 
                     | Start client ->
                         printfn "%s: Start" client
                         let newClients = add {id=client;state=ClientFsm.heartbeat()} clients
@@ -85,7 +83,7 @@
                         return! loop(newClients,newServerInfo)
                     | Stop client ->
                         printfn "%s: Stop" client
-                        inbox.Post(ServerReport)    // interim report
+                        inbox.Post(ServerReport)    // queue up interim report
                         inbox.Post(ServerTick 1<seconds>)
                         return! loop(rm client clients,serverInfo)
                     | Rollover (client,mb,iteration) -> 
@@ -101,9 +99,7 @@
                       clients |> List.iter (fun c -> printfn "\t%s\t%A" c.id c.state)
                       return! loop(clients,serverInfo)
                     | ServerTick hbFrequency ->
-                      printf "."
-                      clients |> List.iter (fun c -> c.tick hbFrequency )
-                      //let clients' = clients |> List.map (fun c -> {c with state=(ClientFsm.tick c.state hbFrequency)})
+                      clients |> List.iter (fun c -> c.tick(hbFrequency,(fun() -> printfn "%s: condition RED -- missed heartbeats" c.id)))
                       // when all clients finished report general stats and finish
                       if serverInfo.clientsServed > 0 && active clients = 0 then 
                         inbox.Post(ServerReport)
