@@ -11,9 +11,11 @@ using Erlang-style [actor-based concurrency](http://fsharpforfunandprofit.com/po
 with a translation to Python, planned.
 
 ###Implementation
-New to F#? It reads like Python or Ruby with type inference. You can try F# "hello world" now from your browser in [http://tryfs.net/](http://tryfs.net/)
+New to F#? It reads like Python or Ruby with type inference. 
+You can try F# "hello world" now from your browser in [http://tryfs.net/](http://tryfs.net/)
 
-The "Syntax in sixty seconds" essay [here](http://fsharpforfunandprofit.com/posts/fsharp-in-60-seconds/) will get you fluent enough to read along the code.
+The "Syntax in sixty seconds" essay [here](http://fsharpforfunandprofit.com/posts/fsharp-in-60-seconds/) 
+will get you fluent enough to read along the code.
 I recommend this tour:
 
 - First,  the core messaging loop in [Server.fs](Fury/Server.fs)
@@ -38,14 +40,14 @@ the .NET runtime required by F#. For Linux, install as described  [here](http://
 There is a single executable called Fury.exe which can run as a server or client under Mono.
 To start it as the server from a terminal shell type:
 
-    > mono Fury/bin/Debug/Fury.exe
+    > mono Fury/bin/Debug/Fury.exe -server
 
 Then start one or more named clients, each with a chunk size in mb, 
-and a duration in minutes
+and a duration in minutes:
 
-    > mono Fury/bin/Debug/Fury.exe Alecto 10 1
-    > mono Fury/bin/Debug/Fury.exe Magaera 20 1
-    > mono Fury/bin/Debug/Fury.exe Tisiphone 30 1
+    > mono Fury/bin/Debug/Fury.exe -client Alecto 10 1
+    > mono Fury/bin/Debug/Fury.exe -client Magaera 20 1
+    > mono Fury/bin/Debug/Fury.exe -client Tisiphone 30 1
 
 When the last client finishes, the server exits, and reports general statistics.
 
@@ -62,12 +64,10 @@ This is not yet implemented.
 0. The client "should complain on startup if the runtime and 'chunk' configuration
 do not allow for two rollovers".
 This is not yet implemented. I need clarification on a "reasonable" threshold. 
-Research [here](http://bit.ly/1lknSqI) indicates high end SSD is 3.2 mbyte/second 
-but network throughput is around 100 mbyte/second.
+Research [here](http://bit.ly/1lknSqI) indicates high end SSD is 3.2 GBit/second 
+but network throughput is 1 GBit/second.
 0. The server should "write client performance data to a db". 
-This is not yet implemented. But raw data is in the log. Grep is your friend.
-0. System should run on Ubuntu 12.04.  Verified on Ubunto 14.04 not 12.04 because 
-the F# and it's runtime happened to be prebuilt for 14.04 from [here](http://fsharp.org/use/linux/)
-If that doesn't work, consider option 2 (build from source like my 15 year old son did) 
-or 5 (vagrant vm).
-
+This is not yet implemented. But raw data is in the server log. Grep is your friend.
+0. System "should run on Ubuntu 12.04".  Verified on Ubuntu 14.04 not 12.04 because 
+the F# and it's runtime happened to be prebuilt for 14.04 from option 1 [here](http://fsharp.org/use/linux/).
+If that doesn't work, consider option 2 or 5 from that list.
