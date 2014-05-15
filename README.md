@@ -27,7 +27,8 @@ I recommend this tour:
 This runs on Mac, Linux and Windows. Tested on Mac and Ubuntu. 
 
 On Mac and Linux you'll need [Mono](http://www.mono-project.com/Main_Page) -- 
-the .NET runtime required by F#. For Linux, install as described  [here](http://fsharp.org/use/linux/)
+the .NET runtime required by F#. For Linux, install as described  [here](http://fsharp.org/use/linux/).
+
 
 ####Build
 0. git clone this repo and cd into Fury/
@@ -61,6 +62,12 @@ This is not yet implemented.
 0. The client "should complain on startup if the runtime and 'chunk' configuration
 do not allow for two rollovers".
 This is not yet implemented. I need clarification on a "reasonable" threshold. 
-Research indicates high end SSD is 3.2 mbyte/second but network throughput is around 1 mbyte/second.
+Research [here](http://bit.ly/1lknSqI) indicates high end SSD is 3.2 mbyte/second 
+but network throughput is around 100 mbyte/second.
 0. The server should "write client performance data to a db". 
-This is not yet implemented. But raw data is in the log. Grep is your fiend.
+This is not yet implemented. But raw data is in the log. Grep is your friend.
+0. System should run on Ubuntu 12.04.  Verified on Ubunto 14.04 not 12.04 because 
+the F# and it's runtime happened to be prebuilt for 14.04 from [here](http://fsharp.org/use/linux/)
+If that doesn't work, consider option 2 (build from source like my 15 year old son did) 
+or 5 (vagrant vm).
+

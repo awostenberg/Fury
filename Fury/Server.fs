@@ -20,9 +20,15 @@
   [<Measure>] type mb
   [<Measure>] type seconds
   [<Measure>] type minutes
+  [<Measure>] type gb
 
-  let secondsPerMinute = 60<seconds>/1<minutes> //todo: as member on seconds
+
+  let mbPerGb = 1000<mb>/1<gb>
+  let secondsPerMinute = 60<seconds>/1<minutes>   //todo: as method on seconds
   let prettyPrint mb = sprintf "%d<mb>" (int(mb/1.0<mb>))
+
+  // todo: what is a reasonable throughput for the "runtime and chunk size configured allow for 2 rollovers"?
+  let reasonableUpperThroughputThreshold = 10<gb>/1<seconds>    //thunderbolt - see http://bit.ly/1lknSqI
 
   // To model the client heartbeat health I'll encode a state machine in a discriminated union
   // in Python I'd might use the State pattern http://en.wikipedia.org/wiki/State_pattern
