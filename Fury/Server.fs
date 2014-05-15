@@ -67,13 +67,13 @@
 
   type ServerAgent(heartbeatFrequency) =
     let allDone = new System.Threading.Semaphore(maximumCount=1,initialCount=0) // signals done to the one who launched agent
-    let ticker = new System.ComponentModel.BackgroundWorker(WorkerSupportsCancellation=true) // heartbeat signal
+    let ticker = new System.ComponentModel.BackgroundWorker(WorkerSupportsCancellation=true) // tick-tock source
     let server = MailboxProcessor.Start (fun inbox ->
         let rec loop(clients,(serverInfo:ServerInfo)) =
           let rm clientId list = list |> List.filter (fun c -> c.id <> clientId)
           let add client list = client::list      // second thoughts: dictionary
           let isActive client = match client.state with | ClientFsm.Green n -> true | _ -> false
-          let active list = list |> List.filter isActive |> List.length
+          let ativeCountOf list = list |> List.filter isActive |> List.length
           async { let! msg = inbox.Receive()
                   match msg with 
                     | Start client ->
@@ -83,8 +83,7 @@
                         return! loop(newClients,newServerInfo)
                     | Stop client ->
                         printfn "%s: Stop" client
-                        inbox.Post(ServerReport)    // queue up interim report
-                        inbox.Post(ServerTick 1<seconds>)
+                        inbox.Post(ServerReport)    // interim report
                         return! loop(rm client clients,serverInfo)
                     | Rollover (client,mb,iteration) -> 
                       printfn "%s: Rollover %s %d" client (prettyPrint mb) iteration
@@ -95,14 +94,14 @@
                       clients |> List.iter (fun c -> if c.id = client then c.heartbeat())
                       return! loop(clients,serverInfo)
                     | ServerReport ->
-                      printfn "Master: Total clients served=%d active clients=%d total written=%s " serverInfo.clientsServed (active clients) (prettyPrint serverInfo.totalMb)
+                      printfn "Master: Total clients served=%d active clients=%d total written=%s " serverInfo.clientsServed (ativeCountOf clients) (prettyPrint serverInfo.totalMb)
                       clients |> List.iter (fun c -> printfn "\t%s\t%A" c.id c.state)
                       return! loop(clients,serverInfo)
                     | ServerTick hbFrequency ->
                       clients |> List.iter (fun c -> c.tick(hbFrequency,(fun() -> printfn "%s: condition RED -- missed heartbeats" c.id)))
                       // when all clients finished report general stats and finish
-                      if serverInfo.clientsServed > 0 && active clients = 0 then 
-                        inbox.Post(ServerReport)
+                      if serverInfo.clientsServed > 0 && ativeCountOf clients = 0 then 
+                        inbox.Post(ServerReport)    // final report
                         inbox.Post(ServerExit)
                       return! loop(clients,serverInfo)
                     | ServerExit -> 
