@@ -42,12 +42,14 @@ To start it as the server from a terminal shell type:
 
     > mono Fury/bin/Debug/Fury.exe -server
 
-Then start one or more named clients, each with a chunk size in mb, 
+Then start one or more named clients, each with 
+a chunk size in mb,
+a file rollover size in mb, 
 and a duration in minutes:
 
-    > mono Fury/bin/Debug/Fury.exe -client Alecto 10 1
-    > mono Fury/bin/Debug/Fury.exe -client Magaera 20 1
-    > mono Fury/bin/Debug/Fury.exe -client Tisiphone 30 1
+    > mono Fury/bin/Debug/Fury.exe -client Alecto 10 100 1
+    > mono Fury/bin/Debug/Fury.exe -client Magaera 20 200 1
+    > mono Fury/bin/Debug/Fury.exe -client Tisiphone 30 300 1
 
 When the last client finishes, the server exits, and reports general statistics.
 
@@ -68,6 +70,8 @@ Research [here](http://bit.ly/1lknSqI) indicates high end SSD is 3.2 GBit/second
 but network throughput is 1 GBit/second.
 0. The server should "write client performance data to a db". 
 This is not yet implemented. But raw data is in the server log. Grep is your friend.
-0. System "should run on Ubuntu 12.04".  Verified on Ubuntu 14.04 not 12.04 because 
-the F# and it's runtime happened to be prebuilt for 14.04 from option 1 [here](http://fsharp.org/use/linux/).
-If that doesn't work, consider option 2 or 5 from that list.
+0. System "should run on Ubuntu 12.04".  Verified on Ubuntu 14.04 not yet 12.04.
+F# and it's runtime happened to be prebuilt for 14.04 from option 1 [here](http://fsharp.org/use/linux/).
+If that doesn't work, consider from that list option 2 (build from source like my 15 year old son did) 
+or 5 (vagrant vm).
+
