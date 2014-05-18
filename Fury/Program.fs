@@ -20,11 +20,11 @@ module CommandLine =
     type Config = Usage | Master of ServerConfig | Slave of ClientConfig
     let usage = """ 
 usage:   Fury [-server] [port] | [-client [<name> <chunkMb> <rolloverMb> <durationMinutes> <outputDir> <host> <port>]]
-example: Fury -server                  # starts the server
+example: Fury -server 8091              # starts the server on port 8091
          Fury -client Alecto 10 40 1 /tmp localhost 8091    # starts a client 
                                     writing 10mb chunks, rollover file every 40mb, for 1 minute, 
-                                    to output directory /tmp  server at localhost, on port 8091
-         Note: positional parameters may be omitted, in which case they take the default identified above
+                                    to output directory /tmp  with server at localhost, on port 8091
+         Note: positional parameters may be omitted, in which case they take the defaults given above
          """
     let parse (argv:string[]) =
       let argvDefaulted n defaultVal = if n < argv.Length then argv.[n] else defaultVal
@@ -77,8 +77,11 @@ module Client =
   let zeroArray (size:float<mb>) = 
     let sz = size/1.0<mb>*1000.*1000./8. |> int
     Array.zeroCreate<uint64> sz
-
-  type RunSpec = {chunk:int;seed:uint64;rollNth:int;buf:uint64[];didRoll:bool;roller:Rolling.RollingFile}
+  let newStopwatch() =
+    let stopwatch = new System.Diagnostics.Stopwatch()
+    stopwatch.Start()
+    stopwatch
+  type RunSpec = {chunk:int;seed:uint64;rollNth:int;buf:uint64[];didRoll:bool;roller:Rolling.RollingFile;stopwatch:System.Diagnostics.Stopwatch}
   let generate (x:RunSpec) =
     let newSeed = Random.fill x.buf x.seed
     {x with seed=newSeed;chunk=x.chunk+1}
@@ -97,7 +100,7 @@ module Client =
   let quickTest filePath =
     let rf = Rolling.RollingFile(filePath,3,(fun s -> printfn "file roll %s" s))
     let zeros = zeroArray 10.<mb>
-    let sample =  {chunk=0;seed=42UL;rollNth=3;buf=zeros;didRoll=false;roller=rf} 
+    let sample =  {chunk=0;seed=42UL;rollNth=3;buf=zeros;didRoll=false;roller=rf;stopwatch=newStopwatch()} 
     let chunks = Seq.unfold (fun x -> Some(x,generate x)) sample
     chunks
       |> Seq.take 20
@@ -142,12 +145,14 @@ let main argv =
           let nth = int (config.rolloverEvery/config.chunkSize)
           let outFiles = sprintf "%s/%s" config.outFilePath config.clientId
           let rollingFile = new Rolling.RollingFile(outFiles,nth,(fun s -> printfn "file %s" s))
-          let initialState = {buf=zeroArray config.chunkSize;rollNth=nth;seed=42UL;didRoll=false;roller=rollingFile;chunk=0}
+          let initialState = {buf=zeroArray config.chunkSize;rollNth=nth;seed=42UL;didRoll=false;roller=rollingFile;chunk=0;stopwatch=newStopwatch()}
           Seq.unfold (fun x -> Some(x,Client.generate x)) initialState
             |> Seq.takeWhile (fun _ -> System.DateTime.Now < endTimes) 
             |> Seq.map Client.rollover
             |> Seq.map (fun x -> 
-              if x.didRoll then (Rollover (config.clientId,config.rolloverEvery,x.chunk)) |> postAndLog
+              if x.didRoll then 
+                (Rollover (config.clientId,config.rolloverEvery,x.chunk,x.stopwatch.Elapsed)) |> postAndLog
+                x.stopwatch.Restart()
               x)
             |> Seq.map Client.write
 //            |> Seq.map Client.slowDown 

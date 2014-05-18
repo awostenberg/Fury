@@ -63,7 +63,7 @@
   // Define the kinds of messages clients send to the server
   // This is a discriminated union -- a kind of lightweight class definition.
   // In Python I'd define an abstract Message, with each type below subtype, and methods to serialize/deserialize polymorphically
-  type Message = | Start of ClientId | Stop of ClientId | Rollover of ClientId*float<mb>*int | Heartbeat of ClientId | ServerExit | ServerTick of int<seconds> | ServerReport
+  type Message = | Start of ClientId | Stop of ClientId | Rollover of ClientId*float<mb>*int*System.TimeSpan | Heartbeat of ClientId | ServerExit | ServerTick of int<seconds> | ServerReport
 
   // for fun I'm trying out message passing style of concurrency, similar to Erlang. No mutable state, so no locks. Just application logic.
   // messages and agents http://fsharpforfunandprofit.com/posts/concurrency-actor-model/
@@ -92,8 +92,8 @@
                       log "%s: Stop" client
                       inbox.Post(ServerReport)    // interim report
                       return! loop(rm client clients,serverInfo)
-                    | Rollover (client,mb,iteration) -> 
-                      log "%s: Rollover %s %d" client (prettyPrint mb) iteration
+                    | Rollover (client,mb,iteration,duration) -> 
+                      log "%s: Rollover %s %d %A" client (prettyPrint mb) iteration duration
                       clients |> List.iter (fun c -> if c.id = client then c.heartbeat())
                       return! loop(clients,{serverInfo with totalMb=serverInfo.totalMb+mb})
                     | Heartbeat client ->
