@@ -8,17 +8,24 @@ open Server
 
 // a simple command line parser
 module CommandLine = 
+    let endPointOf host port =
+      let ipa = (System.Net.Dns.GetHostAddresses host).[0]
+      System.Net.IPEndPoint(ipa,port)
     type ServerConfig = 
       {outDb:string;host:string;port:int}
-      member self.endPoint() = System.Net.IPEndPoint(System.Net.IPAddress.Parse self.host,self.port)
+      member self.endPoint() = endPointOf self.host self.port
     type ClientConfig = 
       {host:string;port:int;clientId:ClientId;chunkSize:float<mb>;duration:int<minutes>;rolloverEvery:float<mb>;outFilePath:string}
-      member self.endPoint() = System.Net.IPEndPoint(System.Net.IPAddress.Parse self.host,self.port)
+      member self.endPoint() = endPointOf self.host self.port
     type Config = Usage | Master of ServerConfig | Slave of ClientConfig
     let usage = """ 
-usage:   Fury [-server] | [-client [<name> <chunkMb> <rolloverMb> <durationMinutes> <outputDir> ]]
+usage:   Fury [-server] [port] | [-client [<name> <chunkMb> <rolloverMb> <durationMinutes> <outputDir> <host> <port>]]
 example: Fury -server                  # starts the server
-         Fury -client Alecto 10 40 1 /tmp  # starts a client writing 10mb chunks, rollover file every 40mb, for 1 minute, to output directory /tmp"""
+         Fury -client Alecto 10 40 1 /tmp localhost 8091    # starts a client 
+                                    writing 10mb chunks, rollover file every 40mb, for 1 minute, 
+                                    to output directory /tmp  server at localhost, on port 8091
+         Note: positional parameters may be omitted, in which case they take the default identified above
+         """
     let parse (argv:string[]) =
       let argvDefaulted n defaultVal = if n < argv.Length then argv.[n] else defaultVal
       //parse command line args in order: [-server] | [-client [<clientId> <chunkMb> <rolloverMb> <durationMinutes> <outPath>]]
@@ -28,16 +35,17 @@ example: Fury -server                  # starts the server
         else 
           match argv.[0].ToLower() with
             | "-server" -> 
-              Master {outDb="fury.csv";host="127.0.0.1";port=8091} 
+              Master {outDb="fury.csv";host="127.0.0.1";port=System.Int32.Parse (argvDefaulted 1 "8091")} 
             | "-client" -> 
               let mb i = (float i) * 1.0<mb>
               let minutes i = i * 1<minutes>
-              Slave {host="127.0.0.1";port=8091;
-                      clientId=argvDefaulted 1 "Alecto";
-                      chunkSize=System.Int32.Parse (argvDefaulted 2 "10") |> mb;
-                      rolloverEvery=System.Int32.Parse (argvDefaulted 3 "40") |> mb;
-                      duration=System.Int32.Parse (argvDefaulted 4 "1") |> minutes;
-                      outFilePath=argvDefaulted 5 "/tmp"}
+              Slave { clientId=argvDefaulted 1 "Alecto";
+                      chunkSize=argvDefaulted 2 "10" |> System.Int32.Parse |> mb;
+                      rolloverEvery=argvDefaulted 3 "40" |> System.Int32.Parse  |> mb;
+                      duration=argvDefaulted 4 "1" |> System.Int32.Parse |> minutes;
+                      outFilePath=argvDefaulted 5 "/tmp";
+                      host=argvDefaulted 6 "localhost";
+                      port=argvDefaulted 7 "8091" |> System.Int32.Parse }
             | _ -> Usage
   //ts,count,ts,seed //,seed,b8.[1..4]
 
@@ -133,7 +141,7 @@ let main argv =
           let endTimes = System.DateTime.Now.AddMinutes (float config.duration)   
           let nth = int (config.rolloverEvery/config.chunkSize)
           let outFiles = sprintf "%s/%s" config.outFilePath config.clientId
-          let rollingFile = new Rolling.RollingFile(outFiles,nth,(fun s -> printfn "\t\t\tfile %s" s))
+          let rollingFile = new Rolling.RollingFile(outFiles,nth,(fun s -> printfn "file %s" s))
           let initialState = {buf=zeroArray config.chunkSize;rollNth=nth;seed=42UL;didRoll=false;roller=rollingFile;chunk=0}
           Seq.unfold (fun x -> Some(x,Client.generate x)) initialState
             |> Seq.takeWhile (fun _ -> System.DateTime.Now < endTimes) 
