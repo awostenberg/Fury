@@ -9,8 +9,8 @@
     2. git clone repo
     3. xbuild Fury.sln
     4. mono Fury/bin/Debug/Fury.exe &
-    5. mono Fury/bin/Debug/Fury.exe Alecto 10 1   &
-    6. Repeat 6 for as many clients as desired.
+    5. mono Fury/bin/Debug/Fury.exe Alecto 10 50 1   &
+    6. Repeat 5 for as many clients as desired.
 *)
 
 
@@ -47,7 +47,7 @@ example: Fury -server                  # starts the server
          Fury -client Alecto 10 40 1   # starts a client writing 10mb chunks, rollover file every 40mb, for 1 minute"""
 
     let parse (argv:string[]) =
-      //parse command line args in order: [-server] | [-client <clientId> <chunkMb> <durationMinutes>]
+      //parse command line args in order: [-server] | [-client <clientId> <chunkMb> <rolloverMb> <durationMinutes>]
       if argv.Length = 0 
         then Usage
         else 
@@ -62,77 +62,72 @@ example: Fury -server                  # starts the server
                       rolloverEvery=System.Int32.Parse argv.[3] |> mb;
                       duration=System.Int32.Parse argv.[4] |> minutes}
             | _ -> Usage
+  //ts,count,ts,seed //,seed,b8.[1..4]
 
-module Random = 
-  // fast random number generator with period 2^64-1; about generates 230 mbytes /second on iMac
-  // -- see http://en.wikipedia.org/wiki/Xorshift  
-  let nextRand x =
-    let x = x ^^^ (x >>> 12)
-    let x = x ^^^ (x <<< 25)
-    let x = x ^^^ (x >>> 27)
-    x * 2685821657736338717UL
-  
-  /// fill buffer with random numbers generated from seed,
-  /// and return the seed to use next time
-  let fill (buf:uint64[]) seed =
-    let mutable n = seed
-    for i in 0..(buf.Length - 1) do
-      n <- nextRand n
-      buf.[i] <- n
-    n
 
-  /// time an operation
-  let time fn =
-    let w = System.Diagnostics.Stopwatch()
-    w.Start()
-    let retval = fn()
-    w.Stop()
-    w.Elapsed,retval
 
-  /// time the generator in mb/seconds
-  let timeTheGenerator() =
-    let count = 1000*1000*10
-    let buf = Array.zeroCreate<uint64> (count/8)
-    let seed = (uint64 System.DateTime.Now.Ticks)
-    let t,newseed = time (fun () -> fill buf seed)
-    let ts = t.TotalSeconds*1.<seconds>
-    let mbCount = float count /1000./1000.*1.<mb>
-    mbCount/ts       //ts,count,ts,seed //,seed,b8.[1..4]
+module Rolling =
+  type FileStreams = {fs:System.IO.FileStream;binary:System.IO.BinaryWriter}
+  type RollingFile(baseFn:string,rolloverEvery:int,traceMsg:(string->unit)) =
+      let mutable count = 0
+      let fn seq = sprintf "%s.%03d.tmp" baseFn (seq/rolloverEvery)
+      let newFile seq = 
+          traceMsg (fn seq)
+          let fs = new System.IO.FileStream(fn seq,System.IO.FileMode.Create)
+          fs.Seek(0L,System.IO.SeekOrigin.Begin) |> ignore
+          let bw = new System.IO.BinaryWriter(fs)
+          {fs=fs;binary=bw}
+      let mutable output = newFile 0
+      member this.Close() =
+        output.fs.Close()
+        output.binary.Close()
+      member this.Write(chunk:uint64[]) =
+        if count>0 && count%rolloverEvery=0 then 
+          this.Close() 
+          output <- newFile count
+        chunk |> Array.iter (fun x -> output.binary.Write x)
+        count <- count + 1
+      //todo: add iDispose
 
 module Client =
   let zeroArray (size:float<mb>) = 
     let sz = size/1.0<mb>*1000.*1000./8. |> int
     Array.zeroCreate<uint64> sz
-  let zeros = zeroArray 10.<mb>                       // mutable so if ever >1 data thread need 1/thread
 
-  type RunSpec = {chunk:int;seed:uint64;rollNth:int;buf:uint64[];didRoll:bool}
-  let sample =  {chunk=0;seed=42UL;rollNth=3;buf=zeros;didRoll=false} 
-  let generate x =
+  type RunSpec = {chunk:int;seed:uint64;rollNth:int;buf:uint64[];didRoll:bool;roller:Rolling.RollingFile}
+  let generate (x:RunSpec) =
     let newSeed = Random.fill x.buf x.seed
     {x with seed=newSeed;chunk=x.chunk+1}
   let write x = 
+    x.roller.Write x.buf
     printf "%d %A " x.chunk (x.buf.[0])
     x
-  let rollover x = 
+  let rollover (x:RunSpec) = 
     let doRoll = x.chunk % x.rollNth = 0
     if doRoll then
       printf "\nfile %d: " (x.chunk/x.rollNth)
     {x with didRoll=doRoll}
-  let slowDown x =
+  let slowDown (x:RunSpec) =
     System.TimeSpan.FromSeconds (1.0) |> System.Threading.Thread.Sleep
     x
-
-  let quickTest() =
+  let quickTest filePath =
+    let rf = Rolling.RollingFile(filePath,3,(fun s -> printfn "file roll %s" s))
+    let zeros = zeroArray 10.<mb>
+    let sample =  {chunk=0;seed=42UL;rollNth=3;buf=zeros;didRoll=false;roller=rf} 
     let chunks = Seq.unfold (fun x -> Some(x,generate x)) sample
     chunks
       |> Seq.take 20
       |> Seq.map rollover
       |> Seq.map write
       |> Seq.iter (fun _ ->())
+    rf.Close()
+
+    //Client.quickTest "/tmp/fury-test"
+
+open Client
 
 [<EntryPoint>]
 let main argv = 
-    //printfn "usage: fury  -client  [-to localhost:8090]  -name alecto -duration 30.minutes -chunk 10.mb  -filesys tmp/ -rollover 100.mb"
     match CommandLine.parse argv with
       | CommandLine.Usage -> printfn "%s" CommandLine.usage
       | CommandLine.Master config ->
@@ -154,16 +149,19 @@ let main argv =
               client.Post(Heartbeat config.clientId))
           beatingHeart.RunWorkerAsync()
 
+          // generate and write data in an infinite lazy sequence which ends on time
           let endTimes = System.DateTime.Now.AddMinutes (float config.duration)   
-          let starter = {Client.sample with buf=Client.zeroArray config.chunkSize;rollNth=int (config.rolloverEvery/config.chunkSize)}
-          Seq.unfold (fun x -> Some(x,Client.generate x)) starter
+          let nth = int (config.rolloverEvery/config.chunkSize)
+          let rf = new Rolling.RollingFile("/tmp/fury-test",nth,(fun s -> printfn "rollover %s" s))
+          let initialState = {buf=zeroArray config.chunkSize;rollNth=nth;seed=42UL;didRoll=false;roller=rf;chunk=0}
+          Seq.unfold (fun x -> Some(x,Client.generate x)) initialState
             |> Seq.takeWhile (fun _ -> System.DateTime.Now < endTimes) 
             |> Seq.map Client.rollover
             |> Seq.map (fun x -> 
               if x.didRoll then (Rollover (config.clientId,config.chunkSize,x.chunk)) |> client.Post
               x)
             |> Seq.map Client.write
-            |> Seq.map Client.slowDown 
+//            |> Seq.map Client.slowDown 
             |> Seq.iter (fun _ -> ())
 
           // advise server I am done

@@ -72,6 +72,5 @@ but network throughput is 1 GBit/second.
 This is not yet implemented. But raw data is in the server log. Grep is your friend.
 0. System "should run on Ubuntu 12.04".  Verified on Ubuntu 14.04 not yet 12.04.
 F# and it's runtime happened to be prebuilt for 14.04 from option 1 [here](http://fsharp.org/use/linux/).
-If that doesn't work, consider from that list option 2 (build from source like my 15 year old son did) 
-or 5 (vagrant vm).
+If that doesn't work, consider from that list option 2 or 5.
 

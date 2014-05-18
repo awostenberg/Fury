@@ -41,6 +41,7 @@
   <ItemGroup>
     <Compile Include="AssemblyInfo.fs" />
     <Compile Include="Server.fs" />
+    <Compile Include="Random.fs" />
     <Compile Include="Actor.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
