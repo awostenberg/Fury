@@ -16,12 +16,13 @@ module CommandLine =
       member self.endPoint() = System.Net.IPEndPoint(System.Net.IPAddress.Parse self.host,self.port)
     type Config = Usage | Master of ServerConfig | Slave of ClientConfig
     let usage = """ 
-usage:   Fury [-server] | [-client <name> <chunkMb> <rolloverMb> <durationMinutes> <outputDir> ]
+usage:   Fury [-server] | [-client [<name> <chunkMb> <rolloverMb> <durationMinutes> <outputDir> ]]
 example: Fury -server                  # starts the server
          Fury -client Alecto 10 40 1 /tmp  # starts a client writing 10mb chunks, rollover file every 40mb, for 1 minute, to output directory /tmp"""
     let parse (argv:string[]) =
       let argvDefaulted n defaultVal = if n < argv.Length then argv.[n] else defaultVal
-      //parse command line args in order: [-server] | [-client <clientId> <chunkMb> <rolloverMb> <durationMinutes>]
+      //parse command line args in order: [-server] | [-client [<clientId> <chunkMb> <rolloverMb> <durationMinutes> <outPath>]]
+      //omitted positional parameters get defaulted
       if argv.Length = 0 
         then Usage
         else 
@@ -79,8 +80,8 @@ module Client =
     x
   let rollover (x:RunSpec) = 
     let doRoll = x.chunk % x.rollNth = 0
-    if doRoll then
-      printf "\nfile %d: " (x.chunk/x.rollNth)
+//    if doRoll then
+//      printf "\nfile %d: " (x.chunk/x.rollNth)
     {x with didRoll=doRoll}
   let slowDown (x:RunSpec) =
     System.TimeSpan.FromSeconds (1.0) |> System.Threading.Thread.Sleep
@@ -115,7 +116,10 @@ let main argv =
           printfn "Fury %s to server at %s chunk %s duration %d<minutes> output %s" 
             config.clientId (config.endPoint().ToString()) (prettyPrint config.chunkSize) (config.duration/1<minutes>) config.outFilePath
           let client = Actor.TcpActorClient<Server.Message>(config.endPoint())
-          client.Post (Start config.clientId)
+          let postAndLog msg =
+            client.Post msg
+            printfn "%A\t%A" System.DateTime.Now msg
+          postAndLog (Start config.clientId)
           // heartbeat to tell server I am alive, even if slow
           let heartbeatFrequency = 5<seconds>
           let beatingHeart = new System.ComponentModel.BackgroundWorker(WorkerSupportsCancellation=true)
@@ -129,20 +133,20 @@ let main argv =
           let endTimes = System.DateTime.Now.AddMinutes (float config.duration)   
           let nth = int (config.rolloverEvery/config.chunkSize)
           let outFiles = sprintf "%s/%s" config.outFilePath config.clientId
-          let rollingFile = new Rolling.RollingFile(outFiles,nth,(fun s -> printfn "rollover %s" s))
+          let rollingFile = new Rolling.RollingFile(outFiles,nth,(fun s -> printfn "\t\t\tfile %s" s))
           let initialState = {buf=zeroArray config.chunkSize;rollNth=nth;seed=42UL;didRoll=false;roller=rollingFile;chunk=0}
           Seq.unfold (fun x -> Some(x,Client.generate x)) initialState
             |> Seq.takeWhile (fun _ -> System.DateTime.Now < endTimes) 
             |> Seq.map Client.rollover
             |> Seq.map (fun x -> 
-              if x.didRoll then (Rollover (config.clientId,config.rolloverEvery,x.chunk)) |> client.Post
+              if x.didRoll then (Rollover (config.clientId,config.rolloverEvery,x.chunk)) |> postAndLog
               x)
             |> Seq.map Client.write
 //            |> Seq.map Client.slowDown 
             |> Seq.iter (fun _ -> ())
 
           // advise server I am done
-          client.Post (Stop config.clientId)
+          postAndLog (Stop config.clientId)
           beatingHeart.CancelAsync()
           ()
     0 // return an integer exit code

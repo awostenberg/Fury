@@ -80,27 +80,28 @@
           let add client list = client::list      // second thoughts: dictionary
           let isActive client = match client.state with | ClientFsm.Green n -> true | _ -> false
           let ativeCountOf list = list |> List.filter isActive |> List.length
+          let log format = Printf.kprintf (printfn "%A: %s" System.DateTime.Now) format
           async { let! msg = inbox.Receive()
                   match msg with 
                     | Start client ->
-                        printfn "%s: Start" client
-                        let newClients = add {id=client;state=ClientFsm.heartbeat()} clients
-                        let newServerInfo = {serverInfo with clientsServed=serverInfo.clientsServed+1}
-                        return! loop(newClients,newServerInfo)
+                      log "%s: Start" client
+                      let newClients = add {id=client;state=ClientFsm.heartbeat()} clients
+                      let newServerInfo = {serverInfo with clientsServed=serverInfo.clientsServed+1}
+                      return! loop(newClients,newServerInfo)
                     | Stop client ->
-                        printfn "%s: Stop" client
-                        inbox.Post(ServerReport)    // interim report
-                        return! loop(rm client clients,serverInfo)
+                      log "%s: Stop" client
+                      inbox.Post(ServerReport)    // interim report
+                      return! loop(rm client clients,serverInfo)
                     | Rollover (client,mb,iteration) -> 
-                      printfn "%s: Rollover %s %d" client (prettyPrint mb) iteration
+                      log "%s: Rollover %s %d" client (prettyPrint mb) iteration
                       clients |> List.iter (fun c -> if c.id = client then c.heartbeat())
                       return! loop(clients,{serverInfo with totalMb=serverInfo.totalMb+mb})
                     | Heartbeat client ->
-                      printfn "%s: Heartbeat" client
+                      log "%s: Heartbeat" client
                       clients |> List.iter (fun c -> if c.id = client then c.heartbeat())
                       return! loop(clients,serverInfo)
                     | ServerReport ->
-                      printfn "Master: Total clients served=%d active clients=%d total written=%s " serverInfo.clientsServed (ativeCountOf clients) (prettyPrint serverInfo.totalMb)
+                      log "Master: Total clients served=%d active clients=%d total written=%s " serverInfo.clientsServed (ativeCountOf clients) (prettyPrint serverInfo.totalMb)
                       clients |> List.iter (fun c -> printfn "\t%s\t%A" c.id c.state)
                       return! loop(clients,serverInfo)
                     | ServerTick hbFrequency ->
@@ -111,7 +112,7 @@
                         inbox.Post(ServerExit)
                       return! loop(clients,serverInfo)
                     | ServerExit -> 
-                      printfn "Master: Server exit"
+                      log "Master: Server exit"
                       ticker.CancelAsync()
                       allDone.Release() |> ignore
                       return() 
