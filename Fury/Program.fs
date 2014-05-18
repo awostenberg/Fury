@@ -1,71 +1,46 @@
 ﻿// Learn more about F# at http://fsharp.org
 // See the 'F# Tutorial' project for more help.
 
-(*
-  general design
-
-  build and run instructions
-    1. install F# and it's runtime http://fsharp.org/use/linux/
-    2. git clone repo
-    3. xbuild Fury.sln
-    4. mono Fury/bin/Debug/Fury.exe &
-    5. mono Fury/bin/Debug/Fury.exe Alecto 10 50 1   &
-    6. Repeat 5 for as many clients as desired.
-*)
-
-
-(*
-  "Fury on.. waiting for the furies to checkin.."
-  "Alecto punishing /tmp for 30 minutes at 10 mb per chunk and rolling over every 100 mb"
-  "Magaera is punishing ..."
-  " is punishing ..."
-  "xyzzy will /not/ punish /tmp for 1 minute at 100 mb per chunk   (yoda rule: config does not two rollovers allow)"
-  "Tisiphone is finished"
-  "Magaera is finished"
-  "Alecto is finished"
-  "xyzzy missed several heartbeats so presumed dead"
-  "general statistics:   Fury   Total chunks     "
-  "Writing stats to csv database..."
-  "Fury off"
-  *)
-
+// Distributed file system stress tester
+// See README.MD for detailed run notes. 
 
 open Server
 
-
+// a simple command line parser
 module CommandLine = 
     type ServerConfig = 
-      {host:string;port:int}
+      {outDb:string;host:string;port:int}
       member self.endPoint() = System.Net.IPEndPoint(System.Net.IPAddress.Parse self.host,self.port)
     type ClientConfig = 
-      {host:string;port:int;clientId:ClientId;chunkSize:float<mb>;duration:int<minutes>;rolloverEvery:float<mb>}
+      {host:string;port:int;clientId:ClientId;chunkSize:float<mb>;duration:int<minutes>;rolloverEvery:float<mb>;outFilePath:string}
       member self.endPoint() = System.Net.IPEndPoint(System.Net.IPAddress.Parse self.host,self.port)
     type Config = Usage | Master of ServerConfig | Slave of ClientConfig
     let usage = """ 
-usage:   Fury [-server] | [-client <name> <chunkMb> <rolloverMb> <durationMinutes> ]
+usage:   Fury [-server] | [-client <name> <chunkMb> <rolloverMb> <durationMinutes> <outputDir> ]
 example: Fury -server                  # starts the server
-         Fury -client Alecto 10 40 1   # starts a client writing 10mb chunks, rollover file every 40mb, for 1 minute"""
-
+         Fury -client Alecto 10 40 1 /tmp  # starts a client writing 10mb chunks, rollover file every 40mb, for 1 minute, to output directory /tmp"""
     let parse (argv:string[]) =
+      let argvDefaulted n defaultVal = if n < argv.Length then argv.[n] else defaultVal
       //parse command line args in order: [-server] | [-client <clientId> <chunkMb> <rolloverMb> <durationMinutes>]
       if argv.Length = 0 
         then Usage
         else 
           match argv.[0].ToLower() with
-            | "-server" -> Master {host="127.0.0.1";port=8091} 
+            | "-server" -> 
+              Master {outDb="fury.csv";host="127.0.0.1";port=8091} 
             | "-client" -> 
               let mb i = (float i) * 1.0<mb>
               let minutes i = i * 1<minutes>
               Slave {host="127.0.0.1";port=8091;
-                      clientId=argv.[1];
-                      chunkSize=System.Int32.Parse argv.[2] |> mb;
-                      rolloverEvery=System.Int32.Parse argv.[3] |> mb;
-                      duration=System.Int32.Parse argv.[4] |> minutes}
+                      clientId=argvDefaulted 1 "Alecto";
+                      chunkSize=System.Int32.Parse (argvDefaulted 2 "10") |> mb;
+                      rolloverEvery=System.Int32.Parse (argvDefaulted 3 "40") |> mb;
+                      duration=System.Int32.Parse (argvDefaulted 4 "1") |> minutes;
+                      outFilePath=argvDefaulted 5 "/tmp"}
             | _ -> Usage
   //ts,count,ts,seed //,seed,b8.[1..4]
 
-
-
+// a rolling file that closes and reopens itself after writing up to a configured size
 module Rolling =
   type FileStreams = {fs:System.IO.FileStream;binary:System.IO.BinaryWriter}
   type RollingFile(baseFn:string,rolloverEvery:int,traceMsg:(string->unit)) =
@@ -100,7 +75,7 @@ module Client =
     {x with seed=newSeed;chunk=x.chunk+1}
   let write x = 
     x.roller.Write x.buf
-    printf "%d %A " x.chunk (x.buf.[0])
+    //printf "%d %A " x.chunk (x.buf.[0])
     x
   let rollover (x:RunSpec) = 
     let doRoll = x.chunk % x.rollNth = 0
@@ -137,7 +112,8 @@ let main argv =
           serverAgent.WaitAllDone()
           server.Stop()
       | CommandLine.Slave config -> 
-          printfn "Fury %s to server at %s chunk %s duration %d<minutes>" config.clientId (config.endPoint().ToString()) (prettyPrint config.chunkSize) (config.duration/1<minutes>)
+          printfn "Fury %s to server at %s chunk %s duration %d<minutes> output %s" 
+            config.clientId (config.endPoint().ToString()) (prettyPrint config.chunkSize) (config.duration/1<minutes>) config.outFilePath
           let client = Actor.TcpActorClient<Server.Message>(config.endPoint())
           client.Post (Start config.clientId)
           // heartbeat to tell server I am alive, even if slow
@@ -152,13 +128,14 @@ let main argv =
           // generate and write data in an infinite lazy sequence which ends on time
           let endTimes = System.DateTime.Now.AddMinutes (float config.duration)   
           let nth = int (config.rolloverEvery/config.chunkSize)
-          let rf = new Rolling.RollingFile("/tmp/fury-test",nth,(fun s -> printfn "rollover %s" s))
-          let initialState = {buf=zeroArray config.chunkSize;rollNth=nth;seed=42UL;didRoll=false;roller=rf;chunk=0}
+          let outFiles = sprintf "%s/%s" config.outFilePath config.clientId
+          let rollingFile = new Rolling.RollingFile(outFiles,nth,(fun s -> printfn "rollover %s" s))
+          let initialState = {buf=zeroArray config.chunkSize;rollNth=nth;seed=42UL;didRoll=false;roller=rollingFile;chunk=0}
           Seq.unfold (fun x -> Some(x,Client.generate x)) initialState
             |> Seq.takeWhile (fun _ -> System.DateTime.Now < endTimes) 
             |> Seq.map Client.rollover
             |> Seq.map (fun x -> 
-              if x.didRoll then (Rollover (config.clientId,config.chunkSize,x.chunk)) |> client.Post
+              if x.didRoll then (Rollover (config.clientId,config.rolloverEvery,x.chunk)) |> client.Post
               x)
             |> Seq.map Client.write
 //            |> Seq.map Client.slowDown 
