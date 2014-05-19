@@ -45,10 +45,6 @@ If you want to build from source:
 ####Run
 There is a single executable called Fury.exe which can run as a server or client under Mono.
 
-For usage help type
-
-    > mono Fury/bin/Debug/Fury.exe
-
 To start it as the server from a terminal shell type:
 
     > mono Fury/bin/Debug/Fury.exe -server
@@ -65,10 +61,12 @@ and an output path:
 
 When the last client finishes, the server exits, and reports general statistics.
 
+There are several more command line options not shown above, such as IP Host address.
+To see usage help, type:
+
+    > mono Fury/bin/Debug/Fury.exe
+
 ###Qualifications
-0. Possible runtime limit. There is a problem in the 3rd party distributing messaging library
-or my use of it. After about 400 messages the server crashes on my mac: "too many open sockets".
-I suspect it's leaking socket handles. But it does not happen on Ubuntu 12.04.
 0. Memory stats. The client should "report CPU and memory info on data thread every 10 seconds".
 This is not yet implemented.
 0. The client "should complain on startup if the runtime and 'chunk' configuration
@@ -78,5 +76,5 @@ Research [here](http://bit.ly/1lknSqI) indicates high end SSD is 3.2 GBit/second
 but network throughput is 1 GBit/second.
 0. The server should "write client performance data to a db". 
 This is not yet implemented. But raw data is in the server log. Grep is your friend.
-0. System "should run on Ubuntu 12.04".  Verified on Ubuntu 12.04. 
+
 
