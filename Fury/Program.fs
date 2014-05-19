@@ -15,21 +15,21 @@ module CommandLine =
       {outDb:string;host:string;port:int}
       member self.endPoint() = endPointOf self.host self.port
     type ClientConfig = 
-      {host:string;port:int;clientId:ClientId;chunkSize:float<mb>;duration:int<minutes>;rolloverEvery:float<mb>;outFilePath:string}
+      {host:string;port:int;clientId:ClientId;chunkSize:float<mb>;duration:int<minutes>;rolloverEvery:float<mb>;outFilePath:string;seed:uint64}
       member self.endPoint() = endPointOf self.host self.port
     type Config = Usage | Master of ServerConfig | Slave of ClientConfig
     let usage = """ 
-usage:   Fury [-server] [port] | [-client [<name> <chunkMb> <rolloverMb> <durationMinutes> <outputDir> <host> <port>]]
+usage:   Fury [-server] [port] | [-client [<name> <chunkMb> <rolloverMb> <durationMinutes> <outputDir> <host> <port> <seed>]]
 example: Fury -server 8091              # starts the server on port 8091
-         Fury -client Alecto 10 40 1 /tmp localhost 8091    # starts a client 
-                                    writing 10mb chunks, rollover file every 40mb, for 1 minute, 
-                                    to output directory /tmp  with server at localhost, on port 8091
+         Fury -client Alecto 10 40 1 /tmp localhost 8091  42   # starts a client 
+                      writing 10mb chunks, rollover file every 40mb, for 1 minute, 
+                      to output directory /tmp  with server at localhost, on port 8091, 
+                      random number generator seed of 42 (can be any non-zero integer; default is system clock)
          Note: positional parameters may be omitted, in which case they take the defaults given above
          """
     let parse (argv:string[]) =
       let argvDefaulted n defaultVal = if n < argv.Length then argv.[n] else defaultVal
-      //parse command line args in order: [-server] | [-client [<clientId> <chunkMb> <rolloverMb> <durationMinutes> <outPath>]]
-      //omitted positional parameters get defaulted
+      //parse command line args in positional order with defaults for omitted positional parameters
       if argv.Length = 0 
         then Usage
         else 
@@ -39,79 +39,19 @@ example: Fury -server 8091              # starts the server on port 8091
             | "-client" -> 
               let mb i = (float i) * 1.0<mb>
               let minutes i = i * 1<minutes>
+              let randomSeed = System.DateTime.Now.Ticks |> string
               Slave { clientId=argvDefaulted 1 "Alecto";
                       chunkSize=argvDefaulted 2 "10" |> System.Int32.Parse |> mb;
                       rolloverEvery=argvDefaulted 3 "40" |> System.Int32.Parse  |> mb;
                       duration=argvDefaulted 4 "1" |> System.Int32.Parse |> minutes;
                       outFilePath=argvDefaulted 5 "/tmp";
                       host=argvDefaulted 6 "localhost";
-                      port=argvDefaulted 7 "8091" |> System.Int32.Parse }
+                      port=argvDefaulted 7 "8091" |> System.Int32.Parse
+                      seed=argvDefaulted 8 randomSeed  |> System.UInt64.Parse }
             | _ -> Usage
-  //ts,count,ts,seed //,seed,b8.[1..4]
-
-// a rolling file that closes and reopens itself after writing up to a configured size
-module Rolling =
-  type FileStreams = {fs:System.IO.FileStream;binary:System.IO.BinaryWriter}
-  type RollingFile(baseFn:string,rolloverEvery:int,traceMsg:(string->unit)) =
-      let mutable count = 0
-      let fn seq = sprintf "%s.%03d.tmp" baseFn (seq/rolloverEvery)
-      let newFile seq = 
-          traceMsg (fn seq)
-          let fs = new System.IO.FileStream(fn seq,System.IO.FileMode.Create)
-          fs.Seek(0L,System.IO.SeekOrigin.Begin) |> ignore
-          let bw = new System.IO.BinaryWriter(fs)
-          {fs=fs;binary=bw}
-      let mutable output = newFile 0
-      member this.Close() =
-        output.fs.Close()
-        output.binary.Close()
-      member this.Write(chunk:uint64[]) =
-        if count>0 && count%rolloverEvery=0 then 
-          this.Close() 
-          output <- newFile count
-        chunk |> Array.iter (fun x -> output.binary.Write x)
-        count <- count + 1
-      //todo: add iDispose
-
-module Client =
-  let zeroArray (size:float<mb>) = 
-    let sz = size/1.0<mb>*1000.*1000./8. |> int
-    Array.zeroCreate<uint64> sz
-  let newStopwatch() =
-    let stopwatch = new System.Diagnostics.Stopwatch()
-    stopwatch.Start()
-    stopwatch
-  type RunSpec = {chunk:int;seed:uint64;rollNth:int;buf:uint64[];didRoll:bool;roller:Rolling.RollingFile;stopwatch:System.Diagnostics.Stopwatch}
-  let generate (x:RunSpec) =
-    let newSeed = Random.fill x.buf x.seed
-    {x with seed=newSeed;chunk=x.chunk+1}
-  let write x = 
-    x.roller.Write x.buf
-    //printf "%d %A " x.chunk (x.buf.[0])
-    x
-  let rollover (x:RunSpec) = 
-    let doRoll = x.chunk % x.rollNth = 0
-//    if doRoll then
-//      printf "\nfile %d: " (x.chunk/x.rollNth)
-    {x with didRoll=doRoll}
-  let slowDown (x:RunSpec) =
-    System.TimeSpan.FromSeconds (1.0) |> System.Threading.Thread.Sleep
-    x
-  let quickTest filePath =
-    let rf = Rolling.RollingFile(filePath,3,(fun s -> printfn "file roll %s" s))
-    let zeros = zeroArray 10.<mb>
-    let sample =  {chunk=0;seed=42UL;rollNth=3;buf=zeros;didRoll=false;roller=rf;stopwatch=newStopwatch()} 
-    let chunks = Seq.unfold (fun x -> Some(x,generate x)) sample
-    chunks
-      |> Seq.take 20
-      |> Seq.map rollover
-      |> Seq.map write
-      |> Seq.iter (fun _ ->())
-    rf.Close()
-
-    //Client.quickTest "/tmp/fury-test"
 
 open Client
+
 
 [<EntryPoint>]
 let main argv = 
@@ -124,8 +64,8 @@ let main argv =
           serverAgent.WaitAllDone()
           server.Stop()
       | CommandLine.Slave config -> 
-          printfn "Fury %s to server at %s chunk %s duration %d<minutes> output %s" 
-            config.clientId (config.endPoint().ToString()) (prettyPrint config.chunkSize) (config.duration/1<minutes>) config.outFilePath
+          printfn "Fury %s to server at %s chunk %s duration %d<minutes> output %s seed %d" 
+            config.clientId (config.endPoint().ToString()) (prettyPrint config.chunkSize) (config.duration/1<minutes>) config.outFilePath config.seed
           let client = Actor.TcpActorClient<Server.Message>(config.endPoint())
           let postAndLog msg =
             client.Post msg
@@ -145,7 +85,7 @@ let main argv =
           let nth = int (config.rolloverEvery/config.chunkSize)
           let outFiles = sprintf "%s/%s" config.outFilePath config.clientId
           let rollingFile = new Rolling.RollingFile(outFiles,nth,(fun s -> printfn "file %s" s))
-          let initialState = {buf=zeroArray config.chunkSize;rollNth=nth;seed=42UL;didRoll=false;roller=rollingFile;chunk=0;stopwatch=newStopwatch()}
+          let initialState = {buf=zeroArray config.chunkSize;rollNth=nth;seed=config.seed;didRoll=false;roller=rollingFile;chunk=0;stopwatch=newStopwatch()}
           Seq.unfold (fun x -> Some(x,Client.generate x)) initialState
             |> Seq.takeWhile (fun _ -> System.DateTime.Now < endTimes) 
             |> Seq.map Client.rollover

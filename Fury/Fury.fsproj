@@ -43,6 +43,7 @@
     <Compile Include="Server.fs" />
     <Compile Include="Random.fs" />
     <Compile Include="Actor.fs" />
+    <Compile Include="Client.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\..\Microsoft SDKs\F#\3.1\Framework\v4.0\Microsoft.FSharp.Targets" />
