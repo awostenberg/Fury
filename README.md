@@ -3,15 +3,15 @@ Fury
 
 ###Distributed stress test
 
-One or more clients stress the local system under test and post results to a recording server. 
+One or more clients stress the local system under test and stream results to a recording server. 
 
 ###Design
 First implemented in [F#](http://fsharp.org/) 
-using Erlang-style [actor-based concurrency](http://fsharpforfunandprofit.com/posts/concurrency-actor-model) 
-with a translation to Python, planned.
+using Erlang-style [actor-based concurrency](http://fsharpforfunandprofit.com/posts/concurrency-actor-model) .
 
 ###Implementation
-New to F#? It reads like Python or Ruby with type inference. 
+New to F#? It's a mature, function-first, programming language
+that reads like Ruby or Python with type inference. Learn more at [fsharp.org](http://fsharp.org).
 You can try F# "hello world" now from your browser in [http://tryfs.net/](http://tryfs.net/)
 
 The "Syntax in sixty seconds" essay [here](http://fsharpforfunandprofit.com/posts/fsharp-in-60-seconds/) 
@@ -50,8 +50,8 @@ To start it as the server from a terminal shell type:
     > mono Fury/bin/Debug/Fury.exe -server
 
 Then start one or more named clients, each with 
-a chunk size in mb,
-a file rollover size in mb, 
+a chunk size in megabytes,
+a file rollover size in megabytes, 
 a duration in minutes,
 and an output path:
 
@@ -66,15 +66,6 @@ To see usage help, type:
 
     > mono Fury/bin/Debug/Fury.exe
 
-###Qualifications
-0. Memory stats. The client should "report CPU and memory info on data thread every 10 seconds".
-This is not yet implemented.
-0. The client "should complain on startup if the runtime and 'chunk' configuration
-do not allow for two rollovers".
-This is not yet implemented. I need clarification on a "reasonable" threshold. 
-Research [here](http://bit.ly/1lknSqI) indicates high end SSD is 3.2 GBit/second 
-but network throughput is 1 GBit/second.
-0. The server should "write client performance data to a db". 
-This is not yet implemented. But raw data is in the server log. Grep is your friend.
+
 
 
